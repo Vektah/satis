@@ -24,4 +24,8 @@ table { width: 100% }
 table th { width: 20% }
 table td, table th { padding: 4px; border: 1px solid #ccc }
 th { background-color: #eee }
+ul.csv { list-style: none; margin: 0; padding: 0; }
+ul.csv li { display: inline; }
+ul.csv li:after { content: "|"; }
+ul.csv li:last-child:after { content: ""; }
 input#search { font-size: 20px; margin: 5px 0; padding: 4px 5px; width: 100%; box-sizing: border-box; -moz-box-sizing: border-box; -webkit-box-sizing: border-box; }

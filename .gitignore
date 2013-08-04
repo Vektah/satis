@@ -1,7 +1,9 @@
 /.settings
 /.project
 /.buildpath
+/.idea
 /satis.phar
 /vendor
+/components
 /phpunit.xml
 composer.phar

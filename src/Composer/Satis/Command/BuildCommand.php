@@ -12,77 +12,62 @@
 
 namespace Composer\Satis\Command;
 
-use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Input\InputArgument;
-use Symfony\Component\Console\Input\InputOption;
-use Composer\Command\Command;
-use Composer\DependencyResolver\Pool;
-use Composer\DependencyResolver\DefaultPolicy;
 use Composer\Composer;
 use Composer\Config;
-use Composer\Package\Dumper\ArrayDumper;
+use Composer\Factory;
+use Composer\DependencyResolver\Pool;
+use Composer\Json\JsonFile;
 use Composer\Package\AliasPackage;
-use Composer\Package\LinkConstraint\VersionConstraint;
-use Composer\Package\LinkConstraint\MultiConstraint;
-use Composer\Package\PackageInterface;
 use Composer\Package\Link;
+use Composer\Package\Dumper\ArrayDumper;
+use Composer\Package\LinkConstraint\MultiConstraint;
 use Composer\Repository\ComposerRepository;
 use Composer\Repository\PlatformRepository;
-use Composer\Json\JsonFile;
-use Composer\Satis\Satis;
-use Composer\Factory;
-use Composer\Util\Filesystem;
-use Composer\Util\RemoteFilesystem;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * @author Jordi Boggiano <j.boggiano@seld.be>
  */
-class BuildCommand extends Command
+class BuildCommand extends SatisCommand
 {
     protected function configure()
     {
-        $this
-            ->setName('build')
-            ->setDescription('Builds a composer repository out of a json file')
-            ->setDefinition(array(
-                new InputArgument('file', InputArgument::OPTIONAL, 'Json file to use', './satis.json'),
-                new InputArgument('output-dir', InputArgument::OPTIONAL, 'Location where to output built files', null),
-                new InputOption('no-html-output', null, InputOption::VALUE_NONE, 'Turn off HTML view'),
-            ))
-            ->setHelp(<<<EOT
-The <info>build</info> command reads the given json file
-(satis.json is used by default) and outputs a composer
-repository in the given output-dir.
+        $this->setName('build');
+        $this->setDescription('Builds a composer repository out of a json file');
+        $this->addOption('no-html-output', null, InputOption::VALUE_NONE, 'Turn off HTML view');
+        $this->setHelp(str_replace('            ', '', '
+            The <info>build</info> command reads the given json file
+            (satis.json is used by default) and outputs a composer
+            repository in the given output-dir.
 
-The json config file accepts the following keys:
+            The json config file accepts the following keys:
 
-- "repositories": defines which repositories are searched
-  for packages.
-- "output-dir": where to output the repository files
-  if not provided as an argument when calling build.
-- "require-all": boolean, if true, all packages present
-  in the configured repositories will be present in the
-  dumped satis repository.
-- "require": if you do not want to dump all packages,
-  you can explicitly require them by name and version.
-- "require-dependencies": if you mark a few packages as
-  required to mirror packagist for example, setting this
-  to true will make satis automatically require all of your
-  requirements' dependencies.
-- "config": all config options from composer, see
-  http://getcomposer.org/doc/04-schema.md#config
-- "output-html": boolean, controls whether the repository
-  has an html page as well or not.
-- "name": for html output, this defines the name of the
-  repository.
-- "homepage": for html output, this defines the home URL
-  of the repository (where you will host it).
-- "twig-template": Location of twig template to use for
-  building the html output.
-EOT
-            )
-        ;
+            - "repositories": defines which repositories are searched
+              for packages.
+            - "output-dir": where to output the repository files
+              if not provided as an argument when calling build.
+            - "require-all": boolean, if true, all packages present
+              in the configured repositories will be present in the
+              dumped satis repository.
+            - "require": if you do not want to dump all packages,
+              you can explicitly require them by name and version.
+            - "require-dependencies": if you mark a few packages as
+              required to mirror packagist for example, setting this
+              to true will make satis automatically require all of your
+              requirements\' dependencies.
+            - "config": all config options from composer, see
+              http://getcomposer.org/doc/04-schema.md#config
+            - "output-html": boolean, controls whether the repository
+              has an html page as well or not.
+            - "name": for html output, this defines the name of the
+              repository.
+            - "homepage": for html output, this defines the home URL
+              of the repository (where you will host it).
+            - "twig-template": Location of twig template to use for
+              building the html output.'));
+        parent::configure();
     }
 
     /**
@@ -92,21 +77,8 @@ EOT
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         $verbose = $input->getOption('verbose');
-        $configFile = $input->getArgument('file');
-
-        if (preg_match('{^https?://}i', $configFile)) {
-            $rfs = new RemoteFilesystem($this->getIO());
-            $contents = $rfs->getContents(parse_url($configFile, PHP_URL_HOST), $configFile, false);
-            $config = JsonFile::parseJson($contents, $configFile);
-        } else {
-            $file = new JsonFile($configFile);
-            if (!$file->exists()) {
-                $output->writeln('<error>File not found: '.$configFile.'</error>');
-
-                return 1;
-            }
-            $config = $file->read();
-        }
+        $config = $this->readConfig($input);
+        $outputDir = $config['output-dir'];
 
         // disable packagist by default
         unset(Config::$defaultRepositories['packagist']);
@@ -117,14 +89,6 @@ EOT
         if (!$requireAll && !isset($config['require'])) {
             $output->writeln('No explicit requires defined, enabling require-all');
             $requireAll = true;
-        }
-
-        if (!$outputDir = $input->getArgument('output-dir')) {
-            $outputDir = isset($config['output-dir']) ? $config['output-dir'] : null;
-        }
-
-        if (null === $outputDir) {
-            throw new \InvalidArgumentException('The output dir must be specified as second argument or be configured inside '.$input->getArgument('file'));
         }
 
         $composer = $this->getApplication()->getComposer(true, $config);
@@ -142,16 +106,7 @@ EOT
         $this->dumpJson($packages, $output, $filename);
 
         if ($htmlView) {
-            $dependencies = array();
-            foreach ($packages as $package) {
-                foreach ($package->getRequires() as $link) {
-                    $dependencies[$link->getTarget()][$link->getSource()] = $link->getSource();
-                }
-            }
-
-            $rootPackage = $composer->getPackage();
-            $twigTemplate = isset($config['twig-template']) ? $config['twig-template'] : null;
-            $this->dumpWeb($packages, $output, $rootPackage, $outputDir, $twigTemplate, $dependencies);
+            $this->getApplication()->find('dump-web')->execute($input, $output);
         }
     }
 
@@ -306,82 +261,5 @@ EOT
         $output->writeln('<info>Writing packages.json</info>');
         $repoJson = new JsonFile($filename);
         $repoJson->write($repo);
-    }
-
-    private function dumpWeb(array $packages, OutputInterface $output, PackageInterface $rootPackage, $directory, $template = null, array $dependencies = array())
-    {
-        $templateDir = $template ? pathinfo($template, PATHINFO_DIRNAME) : __DIR__.'/../../../../views';
-        $loader = new \Twig_Loader_Filesystem($templateDir);
-        $twig = new \Twig_Environment($loader);
-
-        $mappedPackages = $this->getMappedPackageList($packages);
-
-        $name = $rootPackage->getPrettyName();
-        if ($name === '__root__') {
-            $name = 'A';
-            $output->writeln('Define a "name" property in your json config to name the repository');
-        }
-
-        if (!$rootPackage->getHomepage()) {
-            $output->writeln('Define a "homepage" property in your json config to configure the repository URL');
-        }
-
-        $output->writeln('<info>Writing web view</info>');
-
-        $content = $twig->render($template ? pathinfo($template, PATHINFO_BASENAME) : 'index.html.twig', array(
-            'name'          => $name,
-            'url'           => $rootPackage->getHomepage(),
-            'description'   => $rootPackage->getDescription(),
-            'packages'      => $mappedPackages,
-            'dependencies'  => $dependencies,
-        ));
-
-        file_put_contents($directory.'/index.html', $content);
-    }
-
-    private function getMappedPackageList(array $packages)
-    {
-        $groupedPackages = $this->groupPackagesByName($packages);
-
-        $mappedPackages = array();
-        foreach ($groupedPackages as $name => $packages) {
-            $mappedPackages[$name] = array(
-                'highest' => $this->getHighestVersion($packages),
-                'versions' => $this->getDescSortedVersions($packages),
-            );
-        }
-
-        return $mappedPackages;
-    }
-
-    private function groupPackagesByName(array $packages)
-    {
-        $groupedPackages = array();
-        foreach ($packages as $package) {
-            $groupedPackages[$package->getName()][] = $package;
-        }
-
-        return $groupedPackages;
-    }
-
-    private function getHighestVersion(array $packages)
-    {
-        $highestVersion = null;
-        foreach ($packages as $package) {
-            if (null === $highestVersion || version_compare($package->getVersion(), $highestVersion->getVersion(), '>=')) {
-                $highestVersion = $package;
-            }
-        }
-
-        return $highestVersion;
-    }
-
-    private function getDescSortedVersions(array $packages)
-    {
-        usort($packages, function ($a, $b) {
-            return version_compare($b->getVersion(), $a->getVersion());
-        });
-
-        return $packages;
     }
 }

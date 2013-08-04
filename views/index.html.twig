@@ -4,12 +4,9 @@
     <meta charset="utf-8" />
     <meta name="robots" content="noindex,nofollow" />
     <title>{{ name }} Composer Repository</title>
-    <style type="text/css">
-    {% include 'styles.css' %}
-    </style>
+    <link rel="stylesheet" type="text/css" href="styles.css">
 </head>
 <body>
-
     <div id="doc" class="yui-t7">
         <div id="hd">
             <h1>{{ name }} Composer Repository</h1>
@@ -31,94 +28,154 @@
 
                 Filter by package name:
                 <input type="text" id="search" autocomplete="off" autofocus />
-
-                {% for name, package in packages %}
-                    <h3 id="{{ package.highest.name }}">{{ package.highest.name }}</h3>
-                    {% if package.highest.description %}
-                        <p>{{ package.highest.description }}</p>
-                    {% endif %}
-                    <table>
-                        {% if package.highest.homepage %}
-                            <tr>
-                                <th>Homepage</th>
-                                <td><a href="{{ package.highest.homepage }}">{{ package.highest.homepage }}</a></td>
-                            </tr>
-                        {% endif %}
-                        {% if package.highest.license %}
-                            <tr>
-                                <th>License</th>
-                                <td>{{ package.highest.license|join(', ') }}</td>
-                            </tr>
-                        {% endif %}
-                        {% if package.highest.authors %}
-                            <tr>
-                                <th>Authors</th>
-                                <td>
-                                    {% for author in package.highest.authors %}
-                                        {%- if author.homepage -%}
-                                            <a href="{{ author.homepage }}">{{ author.name }}</a>
-                                        {%- else -%}
-                                            {{ author.name }}
-                                        {%- endif -%}
-                                        {%- if not loop.last -%}, {% endif -%}
-                                    {% endfor %}
-                                </td>
-                            </tr>
-                        {% endif %}
-                        <tr>
-                            <th>Releases</th>
-                            <td>
-                                {% for version in package.versions %}
-                                    {%- if version.distType -%}
-                                        <a href="{{ version.distUrl }}" title="{{ version.distReference }}">{{ version.prettyVersion }}</a>
-                                    {%- else -%}
-                                        <a href="{{ version.sourceUrl }}" title="{{ version.sourceReference }}">{{ version.prettyVersion }}</a>
-                                    {%- endif -%}
-                                    {%- if not loop.last -%}, {% endif -%}
-                                {% endfor %}
-                            </td>
-                        </tr>
-                        <tr>
-                            <th>Required by</th>
-                            <td>
-                                {% set package_dependencies = attribute(dependencies, name) %}
-                                {% if package_dependencies|length %}
-                                    <ul>
-                                        {% for dependency in package_dependencies %}
-                                            <li><a href="#{{ dependency }}">{{ dependency }}</a></li>
-                                        {% endfor %}
-                                    </ul>
-                                {% endif %}
-                            </td>
-                        </tr>
-                    </table>
-                {% endfor %}
+                <div id='packages'>
+                </div>
             </div>
         </div>
+        <div id=/'>
         <div id="ft">
             <p><small>This Composer Repository is proudly powered by <a href="https://github.com/composer/satis">Satis</a> {{ constant('Composer\\Satis\\Satis::VERSION') }} - Last updated:  {{ "now"|date(constant('\DateTime::ISO8601')) }}</small></p>
         </div>
     </div>
 
+    <script type="text/x-handlebars-template" id='packageTemplate'>
+        {% verbatim %}
+        {{#with dev-master}}
+        <h3 id="{{name}}">{{name}}</h3>
+        <p>{{description}}</p>
+        <table>
+
+            {{#if homepage}}
+            <tr>
+                <th>Homepage</th>
+                <td><a href="{{homepage}}">{{homepage}}</a></td>
+            </tr>
+            {{/if}}
+
+            {{#if license}}
+            <tr>
+                <th>License</th>
+                <td>{{license}}</td>
+            </tr>
+            {{/if}}
+
+            {{#if authors}}
+                <tr>
+                    <th>Authors</th>
+                    <td>
+                        <ul class='csv'>
+                        {{#each authors}}
+                            <li>
+                            {{#if homepage}}
+                                <a href="{{ homepage }}">{{ name }}</a>
+                            {{else}}
+                                {{ name }}
+                            {{/if}}
+                            </li>
+                        {{/each}}
+                        </ul>
+                    </td>
+                </tr>
+            {{/if}}
+
+
+            {{/with}}
+
+            <tr>
+                <th>Releases</th>
+                <td>
+                <ul class='csv'>
+                    {{#each .}}
+                        <li>
+                            {{#if dist}}
+                                <a href="{{dist.url}}" title="{{dist.reference}}">{{version}}</a>
+                            {{else}}
+                                <a href="{{source.url}}" title="{{source.reference}}">{{version}}</a>
+                            {{/if}}
+                        </li>
+                    {{/each}}
+                </ul>
+                </td>
+            </tr>
+            <tr>
+                <th>Requires</th>
+                <td>
+                    <ul class='csv'>
+                    {{#each dev-master.require}}
+                    <li> <a href="#{{@key}}" title="{{.}}">{{@key}}</a> </li>
+                    {{/each}}
+                    </ul>
+                </td>
+            </tr>
+        </table>
+        {% endverbatim %}
+    </script>
+
+    <script src="jquery.min.js"></script>
+    <script src="handlebars-built.js"></script>
     <script>
-    {% include 'jquery-2.0.0.js' %}
-    $(function(){
-        var packages = $('h3').each(function(){
-            var desc = $(this).next('p'),
-                info = desc.length ? desc.next('table') : $(this).next('table');
-            $(this).data('desc', desc);
-            $(this).data('info', info);
-        });
-        $('input#search').keyup(function(){
-            var needle = $(this).val().toLowerCase(), show;
-            packages.each(function(){
-                show = $(this).text().toLowerCase().indexOf(needle) != -1;
-                $(this).toggle(show);
-                $(this).data('desc').toggle(show);
-                $(this).data('info').toggle(show);
+        function intVersion(version) {
+            var parts = version.split(/\.|-[a-zA-Z]*/);
+            var total = 0;
+
+            $.each(parts, function(index, value) {
+                total += Math.pow(100, parts.length - index - 1) * value;
             });
-        }).focus();
-    });
+
+            return total;
+        }
+
+        function displayPackages(packages_json) {
+            $(function(){
+                var template = Handlebars.compile($("#packageTemplate").html());
+                var packages = $("#packages");
+
+                $.each(packages_json.packages, function(index, value) {
+                    // Make sure there is always a 'dev-master' key, used for displaying details.
+                    if(!'dev-master' in value) {
+                        var highest = {};
+                        var highestVersion = 0;
+                        $.each(value, function(index, data) {
+                            var ver = intVersion(data.version_normalized);
+                            if(ver > highestVersion) {
+                                highest = data;
+                                highestVersion = ver;
+                            }
+                        });
+
+                        value['dev-master'] = highest;
+                    }
+
+                    packages.append(template(value));
+                });
+            });
+        }
+
+        $(function() {
+            var packages = $('h3').each(function(){
+                var desc = $(this).next('p'),
+                        info = desc.length ? desc.next('table') : $(this).next('table');
+                $(this).data('desc', desc);
+                $(this).data('info', info);
+            });
+            $('input#search').keyup(function(){
+                var needle = $(this).val().toLowerCase(), show;
+                packages.each(function(){
+                    show = $(this).text().toLowerCase().indexOf(needle) != -1;
+                    $(this).toggle(show);
+                    $(this).data('desc').toggle(show);
+                    $(this).data('info').toggle(show);
+                });
+            }).focus();
+        });
+
+        {% if data %}
+            {% autoescape false %}
+                displayPackages({{data}});
+            {% endautoescape %}
+        {% else %}
+            $.get('packages.json', displayPackages);
+        {% endif %}
     </script>
 </body>
 </html>
